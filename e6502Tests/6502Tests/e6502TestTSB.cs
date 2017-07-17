@@ -17,10 +17,14 @@ namespace UntariTests
                                                0xa9, 0x33,      // LDA #$33
                                                0x04, 0x00 });   // TSB $00
 
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0xb7, ram.GetByte(0x0000), "TSB failed");
             Assert.AreEqual(0x33, cpu.A, "A failed");
@@ -37,10 +41,14 @@ namespace UntariTests
                                                0xa9, 0x41,      // LDA #$41
                                                0x04, 0x00 });   // TSB $00
 
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0xe7, ram.GetByte(0x0000), "TSB failed"); 
             Assert.AreEqual(0x41, cpu.A, "A failed");

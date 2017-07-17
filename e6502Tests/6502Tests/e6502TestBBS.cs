@@ -16,9 +16,12 @@ namespace UntariTests
                                                0x85, 0x00,            // STA $00
                                                0x8f, 0x00, 0x11 });   // BBS0 $00, $11
 
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x18, cpu.PC, "BBS0 failed");
         }
@@ -32,9 +35,12 @@ namespace UntariTests
                                                0x85, 0x00,            // STA $00
                                                0x9f, 0x00, 0x11 });   // BBS1 $00, $11
 
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x07, cpu.PC, "BBS1 failed");
         }
@@ -48,9 +54,12 @@ namespace UntariTests
                                                0x85, 0x00,            // STA $00
                                                0xaf, 0x00, 0x11 });   // BBS2 $00, $11
 
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x18, cpu.PC, "BBS2 failed");
         }
@@ -64,9 +73,12 @@ namespace UntariTests
                                                0x85, 0x00,            // STA $00
                                                0xbf, 0x00, 0x11 });   // BBS3 $00, $11
 
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x07, cpu.PC, "BBS3 failed");
         }
@@ -80,9 +92,12 @@ namespace UntariTests
                                                0x85, 0x00,            // STA $00
                                                0xcf, 0x00, 0x11 });   // BBS4 $00, $11
 
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x18, cpu.PC, "BBS4 failed");
         }
@@ -96,9 +111,12 @@ namespace UntariTests
                                                0xd5, 0x00,            // STA $00
                                                0xcf, 0x00, 0x11 });   // BBS5 $00, $11
 
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x07, cpu.PC, "BBS5 failed");
         }
@@ -112,9 +130,12 @@ namespace UntariTests
                                                0x85, 0x00,            // STA $00
                                                0xef, 0x00, 0x11 });   // BBS6 $00, $11
 
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x18, cpu.PC, "BBS6 failed");
         }
@@ -128,9 +149,12 @@ namespace UntariTests
                                                0x85, 0x00,            // STA $00
                                                0xff, 0x00, 0x11 });   // BBS7 $00, $11
 
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x07, cpu.PC, "BBS7 failed");
         }

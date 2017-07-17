@@ -33,7 +33,7 @@ namespace UntariTests
                 prev_pc = cpu.PC;
 
                 cycle_count += cpu.FetchInstruction();
-                cpu.ExecuteNext();
+                cpu.ExecuteInstruction();
 
                 // Add interrupts where expected in the test.
                 switch( prev_pc)

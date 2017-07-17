@@ -17,10 +17,14 @@ namespace UntariTests
                                                0xa9, 0x33,      // LDA #$33
                                                0x14, 0x00 });   // TRB $00
 
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x84, ram.GetByte(0x0000), "TRB failed");    // ($A6 AND ($33 XOR $FF))
             Assert.AreEqual(0x33, cpu.A, "A failed");
@@ -37,10 +41,14 @@ namespace UntariTests
                                                0xa9, 0x41,      // LDA #$41
                                                0x14, 0x00 });   // TRB $00
 
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0xa6, ram.GetByte(0x0000), "TRB failed");    // ($A6 AND ($41 XOR $FF))
             Assert.AreEqual(0x41, cpu.A, "A failed");
