@@ -24,7 +24,6 @@ namespace UntariTests
             ushort prev_pc;
             long instr_count = 0;
             long cycle_count = 0;
-            long fetch_cycle_count = 0;
             Stopwatch sw = new Stopwatch();
 
             sw.Start();
@@ -32,8 +31,8 @@ namespace UntariTests
             {
                 instr_count++;
                 prev_pc = cpu.PC;
-                fetch_cycle_count += cpu.FetchInstruction();
-                cycle_count += cpu.ExecuteNext();
+                cycle_count += cpu.FetchInstruction();
+                cpu.ExecuteNext();
             } while (prev_pc != cpu.PC);
             sw.Stop();
 
@@ -45,7 +44,6 @@ namespace UntariTests
             Debug.WriteLine("Effective Mhz: " + mhz.ToString("N1"));
 
             Assert.AreEqual(0x3399, cpu.PC, "Test program failed at $" + cpu.PC.ToString("X4"));
-            Assert.AreEqual( fetch_cycle_count, cycle_count, "Fetch and execute cycle count are different" );
         }
     }
 }

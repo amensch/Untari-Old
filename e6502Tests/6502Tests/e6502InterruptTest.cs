@@ -24,7 +24,6 @@ namespace UntariTests
             ushort prev_pc;
             long instr_count = 0;
             long cycle_count = 0;
-            long fetch_cycle_count = 0;
             Stopwatch sw = new Stopwatch();
 
             sw.Start();
@@ -32,8 +31,9 @@ namespace UntariTests
             {
                 instr_count++;
                 prev_pc = cpu.PC;
-                fetch_cycle_count += cpu.FetchInstruction();
-                cycle_count += cpu.ExecuteNext();
+
+                cycle_count += cpu.FetchInstruction();
+                cpu.ExecuteNext();
 
                 // Add interrupts where expected in the test.
                 switch( prev_pc)
@@ -68,9 +68,7 @@ namespace UntariTests
             Debug.WriteLine("Time: " + sw.ElapsedMilliseconds.ToString() + " ms");
             Debug.WriteLine("Cycles: " + cycle_count.ToString("N0"));
             Debug.WriteLine("Instructions: " + instr_count.ToString("N0"));
-
             Assert.AreEqual(0x06ec, cpu.PC, "Test program failed at $" + cpu.PC.ToString("X4"));
-            Assert.AreEqual( fetch_cycle_count, cycle_count, "Fetch and execute cycle count are different" );
         }
 
     }

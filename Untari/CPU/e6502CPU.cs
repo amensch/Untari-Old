@@ -113,14 +113,24 @@ namespace Untari.CPU
         public int FetchInstruction()
         {
             int cycles = 0;
-            OpCodeRecord op = _opCodeTable.OpCodes[ _bus.GetByte( PC ) ];
             ushort current_pc = PC;
-            int oper = GetOperand( op.AddressMode );
 
-            if( NMIWaiting || (!IF && IRQWaiting) )
+            // Check for interrupts
+            if( NMIWaiting )
             {
+                // this is an interrupt... use different PC value
+                current_pc = GetWordFromMemory(0xfffa);
+                cycles += 6;
+
+            }
+            else if(!IF && IRQWaiting)
+            {
+                current_pc = GetWordFromMemory(0xfffe);
                 cycles += 6;
             }
+
+            OpCodeRecord op = _opCodeTable.OpCodes[_bus.GetByte(current_pc)];
+            int oper = GetOperand(op.AddressMode);
 
             cycles += op.Cycles;
 
@@ -129,6 +139,7 @@ namespace Untari.CPU
             {
                 switch( op.OpCode )
                 {
+                    // Decimal mode is one additional clock cycle in CMOS 
                     case 0x61:
                     case 0x65:
                     case 0x69:
@@ -150,9 +161,13 @@ namespace Untari.CPU
                         if( DF )
                             cycles++;
                         break;
+
+                    // CMOS fixes a bug in this op code which results in an extra clock cycle
                     case 0x6c:
                         cycles++;
                         break;
+
+                    // CMOS architecture results in one less clock cycle
                     case 0x1e:
                     case 0x5e:
                     case 0x3e:
@@ -217,6 +232,8 @@ namespace Untari.CPU
                     cycles += FetchBranch( !NF, oper, current_pc );
                     break;
                 case 0x80:
+                    // NOTE: In OpcodeList.txt the number of clock cycles is one less than the documentation.
+                    // This is because FetchBranch() adds one when a branch is taken, which in this case is always.
                     current_pc += op.Bytes;
                     cycles += FetchBranch( true, oper, current_pc );
                     break;
@@ -232,17 +249,13 @@ namespace Untari.CPU
             return cycles;
         }
 
-        // returns # of clock cycles needed to execute the instruction
-        public int ExecuteNext()
+        public void ExecuteNext()
         {
-            _extraCycles = 0;
-
             // Check for non maskable interrupt (has higher priority over IRQ)
             if (NMIWaiting)
             {
                 DoIRQ(0xfffa);
                 NMIWaiting = false;
-                _extraCycles += 6;
             }
             // Check for hardware interrupt, if enabled
             else if (!IF)
@@ -251,15 +264,12 @@ namespace Untari.CPU
                 {
                     DoIRQ(0xfffe);
                     IRQWaiting = false;
-                    _extraCycles += 6;
                 }
             }
 
             _currentOP = _opCodeTable.OpCodes[_bus.GetByte(PC)];
 
             ExecuteInstruction();
-
-            return _currentOP.Cycles + _extraCycles;
         }
 
         private void ExecuteInstruction()
@@ -300,10 +310,6 @@ namespace Untari.CPU
                         // Unlike ZF and CF, the NF flag represents the MSB after conversion
                         // to BCD.
                         NF = (A > 0x7f);
-
-                        // extra clock cycle on CMOS in decimal mode
-                        if (_cpuType == e6502Type.CMOS)
-                            _extraCycles++;
                     }
                     else
                     {
@@ -340,10 +346,6 @@ namespace Untari.CPU
                 case 0x0a:
                 case 0x0e:
                 case 0x1e:
-
-                    // On 65C02 (abs,X) takes one less clock cycle (but still add back 1 if page boundary crossed)
-                    if (_currentOP.OpCode == 0x1e && _cpuType == e6502Type.CMOS)
-                        _extraCycles--;
 
                     // shift bit 7 into carry
                     CF = (oper >= 0x80);
@@ -422,19 +424,19 @@ namespace Untari.CPU
                 // BCC - branch on carry clear
                 case 0x90:
                     PC += _currentOP.Bytes;
-                    CheckBranch(!CF, oper);
+                    if (!CF) PC += (ushort)oper;
                     break;
 
                 // BCS - branch on carry set
                 case 0xb0:
                     PC += _currentOP.Bytes;
-                    CheckBranch(CF, oper);
+                    if(CF) PC += (ushort)oper;
                     break;
 
                 // BEQ - branch on zero
                 case 0xf0:
                     PC += _currentOP.Bytes;
-                    CheckBranch(ZF, oper);
+                    if(ZF) PC += (ushort)oper;
                     break;
 
                 // BIT - test bits in memory with accumulator (NZV)
@@ -464,27 +466,24 @@ namespace Untari.CPU
                 // BMI - branch on negative
                 case 0x30:
                     PC += _currentOP.Bytes;
-                    CheckBranch(NF, oper);
+                    if(NF) PC += (ushort)oper;
                     break;
 
                 // BNE - branch on non zero
                 case 0xd0:
                     PC += _currentOP.Bytes;
-                    CheckBranch(!ZF, oper);
+                    if(!ZF) PC += (ushort)oper;
                     break;
 
                 // BPL - branch on non negative
                 case 0x10:
                     PC += _currentOP.Bytes;
-                    CheckBranch(!NF, oper);
+                    if(!NF) PC += (ushort)oper;
                     break;
 
                 // BRA - unconditional branch to immediate address
-                // NOTE: In OpcodeList.txt the number of clock cycles is one less than the documentation.
-                // This is because CheckBranch() adds one when a branch is taken, which in this case is always.
                 case 0x80:
-                    PC += _currentOP.Bytes;
-                    CheckBranch(true, oper);
+                    PC += (ushort)(_currentOP.Bytes + oper);
                     break;
 
                 // BRK - force break (I)
@@ -507,13 +506,13 @@ namespace Untari.CPU
                 // BVC - branch on overflow clear
                 case 0x50:
                     PC += _currentOP.Bytes;
-                    CheckBranch(!VF, oper);
+                    if(!VF) PC += (ushort)oper;
                     break;
 
                 // BVS - branch on overflow set
                 case 0x70:
                     PC += _currentOP.Bytes;
-                    CheckBranch(VF, oper);
+                    if(VF) PC += (ushort)oper;
                     break;
 
                 // CLC - clear carry flag
@@ -776,10 +775,6 @@ namespace Untari.CPU
                 case 0x56:
                 case 0x5e:
 
-                    // On 65C02 (abs,X) takes one less clock cycle (but still add back 1 if page boundary crossed)
-                    if (_currentOP.OpCode == 0x5e && _cpuType == e6502Type.CMOS)
-                        _extraCycles--;
-
                     // shift bit 0 into carry
                     CF = ((oper & 0x01) == 0x01);
 
@@ -946,10 +941,6 @@ namespace Untari.CPU
                 case 0x36:
                 case 0x3e:
 
-                    // On 65C02 (abs,X) takes one less clock cycle (but still add back 1 if page boundary crossed)
-                    if (_currentOP.OpCode == 0x3e && _cpuType == e6502Type.CMOS)
-                        _extraCycles--;
-
                     // perserve existing cf value
                     bool old_cf = CF;
 
@@ -976,10 +967,6 @@ namespace Untari.CPU
                 case 0x6e:
                 case 0x76:
                 case 0x7e:
-
-                    // On 65C02 (abs,X) takes one less clock cycle (but still add back 1 if page boundary crossed)
-                    if (_currentOP.OpCode == 0x7e && _cpuType == e6502Type.CMOS)
-                        _extraCycles--;
 
                     // perserve existing cf value
                     old_cf = CF;
@@ -1051,10 +1038,6 @@ namespace Untari.CPU
                         // Unlike ZF and CF, the NF flag represents the MSB after conversion
                         // to BCD.
                         NF = (A > 0x7f);
-
-                        // extra clock cycle on CMOS in decimal mode
-                        if (_cpuType == e6502Type.CMOS)
-                            _extraCycles++;
                     }
                     else
                     {
@@ -1215,25 +1198,10 @@ namespace Untari.CPU
 
                 // Indexed absolute retrieves the byte at the specified memory location
                 case AddressModes.AbsoluteX:
-
-                    ushort imm = GetImmWord();
-                    ushort result = (ushort)(imm + X);
-
-                    if (_currentOP.CheckPageBoundary)
-                    {
-                        if ((imm & 0xff00) != (result & 0xff00)) _extraCycles++;
-                    }
-                    oper = _bus.GetByte(result);
+                    oper = _bus.GetByte(GetImmWord() + X);
                     break;
                 case AddressModes.AbsoluteY:
-                    imm = GetImmWord();
-                    result = (ushort)(imm + Y);
-
-                    if (_currentOP.CheckPageBoundary)
-                    {
-                        if ((imm & 0xff00) != (result & 0xff00)) _extraCycles++;
-                    }
-                    oper = _bus.GetByte(result); break;
+                    oper = _bus.GetByte(GetImmWord() + Y); break;
 
                 // Immediate mode uses the next byte in the instruction directly.
                 case AddressModes.Immediate:
@@ -1277,13 +1245,8 @@ namespace Untari.CPU
                         3)Load the byte at this address
                     */
 
-                    ushort addr = GetWordFromMemory(GetImmByte());
-                    oper = _bus.GetByte(addr + Y);
+                    oper = _bus.GetByte(GetWordFromMemory(GetImmByte()) + Y);
 
-                    if (_currentOP.CheckPageBoundary)
-                    {
-                        if ((oper & 0xff00) != (addr & 0xff00)) _extraCycles++;
-                    }
                     break;
 
 
@@ -1552,14 +1515,6 @@ namespace Untari.CPU
         {
             if (flag)
             {
-                // extra cycle on branch taken
-                _extraCycles++;
-
-                // extra cycle if branch destination is a different page than
-                // the next instruction
-                if ((PC & 0xff00) != ((PC + oper) & 0xff00))
-                    _extraCycles++;
-
                 PC += (ushort)oper;
             }
 
