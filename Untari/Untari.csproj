@@ -47,6 +47,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Console\IBusDevice.cs" />
+    <Compile Include="Console\IClockedDevice.cs" />
     <Compile Include="CPU\AddressModes.cs" />
     <Compile Include="CPU\e6502CPU.cs" />
     <Compile Include="CPU\OpCodes\OpCodeReader.cs" />

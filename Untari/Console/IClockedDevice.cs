@@ -6,7 +6,8 @@ using System.Threading.Tasks;
 
 namespace Untari.Console
 {
-    public class SystemBus
+    public interface IClockedDevice
     {
+        void Tick();
     }
 }
