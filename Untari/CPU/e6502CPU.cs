@@ -37,25 +37,33 @@ namespace Untari.CPU
         public bool ZF;    // zero flag (Z)
         public bool CF;    // carry flag (C)
 
+        // Property to hold the CPU type (NMOS or CMOS)
+        private e6502Type _cpuType { get; set; }
+
         // System bus
         private IBus _bus;
 
         // List of op codes and their attributes
         private OpCodeTable _opCodeTable;
 
-        // The current opcode
-        private OpCodeRecord _currentOP;
+        // Hardware interrupt vector
+        private const ushort IRQ_VECTOR = 0xfffe;
 
-        // Clock cycles to adjust due to page boundaries being crossed, branches taken, or NMOS/CMOS differences
-        private int _extraCycles;
+        // Non maskable interrupt vector
+        private const ushort NMI_VECTOR = 0xfffa;
+
+        // Power on vector
+        private const ushort POWER_ON_VECTOR = 0xfffc;
+
+        // Preloaded op code record and operand
+        private OpCodeRecord _currentOP;
+        private int _currentOper;
 
         // Flag for hardware interrupt (IRQ)
         public bool IRQWaiting { get; set; }
 
         // Flag for non maskable interrupt (NMI)
         public bool NMIWaiting { get; set; }
-
-        public e6502Type _cpuType { get; set; }
 
         public e6502(e6502Type type, IBus bus)
         {
@@ -85,7 +93,7 @@ namespace Untari.CPU
             // On reset the addresses 0xfffc and 0xfffd are read and PC is loaded with this value.
             // It is expected that the initial program loaded will have these values set to something.
             // Most 6502 systems contain ROM in the upper region (around 0xe000-0xffff)
-            PC = GetWordFromMemory(0xfffc);
+            PC = GetWordFromMemory(POWER_ON_VECTOR);
 
             // interrupt disabled is set on powerup
             IF = true;
@@ -94,12 +102,14 @@ namespace Untari.CPU
             IRQWaiting = false;
         }
 
+        // Loads a program into memory (for now used only for testing)
         public void LoadProgram(ushort startingAddress, byte[] program)
         {
             _bus.LoadProgram(startingAddress, program);
             PC = startingAddress;
         }
 
+        // returns disassembled string for the next instruction
         public string DasmNextInstruction()
         {
             OpCodeRecord oprec = _opCodeTable.OpCodes[ _bus.GetByte(PC) ];
@@ -109,41 +119,164 @@ namespace Untari.CPU
                 return oprec.Dasm( GetImmByte() );
         }
 
-        // returns # of clock cycles needed to execute the instruction
-        public int ExecuteNext()
+        // returns number of clock cycles to execute the next instruction
+        public int FetchInstruction()
         {
-            _extraCycles = 0;
+            int cycles = 0;
+            ushort current_pc = PC;
+
+            // Check for interrupts
+            if( NMIWaiting )
+            {
+                current_pc = GetWordFromMemory(NMI_VECTOR);
+                cycles += 6;
+
+            }
+            else if(!IF && IRQWaiting)
+            {
+                current_pc = GetWordFromMemory(IRQ_VECTOR);
+                cycles += 6;
+            }
+
+            _currentOP = _opCodeTable.OpCodes[_bus.GetByte(current_pc)];
+            _currentOper = GetOperand(_currentOP.AddressMode);
+
+            cycles += _currentOP.Cycles;
+
+            // Some op codes require one extra clock cycle in CMOS mode
+            if(_cpuType == e6502Type.CMOS)
+            {
+                switch(_currentOP.OpCode )
+                {
+                    // Decimal mode is one additional clock cycle in CMOS 
+                    case 0x61:
+                    case 0x65:
+                    case 0x69:
+                    case 0x6d:
+                    case 0x71:
+                    case 0x72:
+                    case 0x75:
+                    case 0x79:
+                    case 0x7d:
+                    case 0xe1:
+                    case 0xe5:
+                    case 0xe9:
+                    case 0xed:
+                    case 0xf1:
+                    case 0xf2:
+                    case 0xf5:
+                    case 0xf9:
+                    case 0xfd:
+                        if( DF )
+                            cycles++;
+                        break;
+
+                    // CMOS fixes a bug in this op code which results in an extra clock cycle
+                    case 0x6c:
+                        cycles++;
+                        break;
+
+                    // CMOS architecture results in one less clock cycle
+                    case 0x1e:
+                    case 0x5e:
+                    case 0x3e:
+                    case 0x7e:
+                        cycles--;
+                        break;
+
+                    // Extra clock cycle for branches taken
+                    case 0x90:
+                        current_pc += _currentOP.Bytes;
+                        cycles += FetchBranch(!CF, _currentOper, current_pc);
+                        break;
+                    case 0xb0:
+                        current_pc += _currentOP.Bytes;
+                        cycles += FetchBranch(CF, _currentOper, current_pc);
+                        break;
+                    case 0xf0:
+                        current_pc += _currentOP.Bytes;
+                        cycles += FetchBranch(ZF, _currentOper, current_pc);
+                        break;
+                    case 0x30:
+                        current_pc += _currentOP.Bytes;
+                        cycles += FetchBranch(NF, _currentOper, current_pc);
+                        break;
+                    case 0xd0:
+                        current_pc += _currentOP.Bytes;
+                        cycles += FetchBranch(!ZF, _currentOper, current_pc);
+                        break;
+                    case 0x10:
+                        current_pc += _currentOP.Bytes;
+                        cycles += FetchBranch(!NF, _currentOper, current_pc);
+                        break;
+                    case 0x80:
+                        // NOTE: In OpcodeList.txt the number of clock cycles is one less than the documentation.
+                        // This is because FetchBranch() adds one when a branch is taken, which in this case is always.
+                        current_pc += _currentOP.Bytes;
+                        cycles += FetchBranch(true, _currentOper, current_pc);
+                        break;
+                    case 0x50:
+                        current_pc += _currentOP.Bytes;
+                        cycles += FetchBranch(!VF, _currentOper, current_pc);
+                        break;
+                    case 0x70:
+                        current_pc += _currentOP.Bytes;
+                        cycles += FetchBranch(VF, _currentOper, current_pc);
+                        break;
+                }
+            }
+
+            // Crossing a page boundary results in an extra clock cycle
+            if(_currentOP.CheckPageBoundary )
+            {
+                if(_currentOP.AddressMode == AddressModes.AbsoluteX )
+                {
+                    ushort imm = GetImmWord();
+                    ushort result = (ushort) (imm + X);
+                    if( (imm & 0xff00) != (result & 0xff00) )
+                        cycles++;
+                }
+                else if(_currentOP.AddressMode == AddressModes.AbsoluteY )
+                {
+                    ushort imm = GetImmWord();
+                    ushort result = (ushort) (imm + Y);
+                    if( (imm & 0xff00) != (result & 0xff00) )
+                        cycles++;
+                }
+                else if(_currentOP.AddressMode == AddressModes.IndirectY )
+                {
+                    ushort addr = GetWordFromMemory( GetImmByte() );
+                    byte operand = _bus.GetByte( addr + Y );
+                    if( (operand & 0xff00) != (addr & 0xff00) )
+                        cycles++;
+                }
+            }
+
+            return cycles;
+        }
+
+        // executes the loaded instruction (FetchInstruction must be called first)
+        public void ExecuteInstruction()
+        {
+            int result;
 
             // Check for non maskable interrupt (has higher priority over IRQ)
             if (NMIWaiting)
             {
-                DoIRQ(0xfffa);
+                ProcessInterrupt(0xfffa, false);
                 NMIWaiting = false;
-                _extraCycles += 6;
             }
             // Check for hardware interrupt, if enabled
             else if (!IF)
             {
-                if(IRQWaiting)
+                if (IRQWaiting)
                 {
-                    DoIRQ(0xfffe);
+                    ProcessInterrupt(0xfffe, false);
                     IRQWaiting = false;
-                    _extraCycles += 6;
                 }
             }
 
-            _currentOP = _opCodeTable.OpCodes[_bus.GetByte(PC)];
-
-            ExecuteInstruction();
-
-            return _currentOP.Cycles + _extraCycles;
-        }
-
-        private void ExecuteInstruction()
-        {
-            int result;
-            int oper = GetOperand(_currentOP.AddressMode);
-
+            // Process the current op code
             switch (_currentOP.OpCode)
             {
                 // ADC - add memory to accumulator with carry
@@ -160,7 +293,7 @@ namespace Untari.CPU
 
                     if (DF)
                     {
-                        result = HexToBCD(A) + HexToBCD((byte)oper);
+                        result = HexToBCD(A) + HexToBCD((byte)_currentOper);
                         if (CF) result++;
 
                         CF = (result > 99);
@@ -177,14 +310,10 @@ namespace Untari.CPU
                         // Unlike ZF and CF, the NF flag represents the MSB after conversion
                         // to BCD.
                         NF = (A > 0x7f);
-
-                        // extra clock cycle on CMOS in decimal mode
-                        if (_cpuType == e6502Type.CMOS)
-                            _extraCycles++;
                     }
                     else
                     {
-                        ADC((byte)oper);
+                        AddWithCarry((byte)_currentOper);
                     }
                     PC += _currentOP.Bytes;
                     break;
@@ -200,7 +329,7 @@ namespace Untari.CPU
                 case 0x35:
                 case 0x39:
                 case 0x3d:
-                    result = A & oper;
+                    result = A & _currentOper;
 
                     NF = ((result & 0x80) == 0x80);
                     ZF = ((result & 0xff) == 0x00);
@@ -218,15 +347,11 @@ namespace Untari.CPU
                 case 0x0e:
                 case 0x1e:
 
-                    // On 65C02 (abs,X) takes one less clock cycle (but still add back 1 if page boundary crossed)
-                    if (_currentOP.OpCode == 0x1e && _cpuType == e6502Type.CMOS)
-                        _extraCycles--;
-
                     // shift bit 7 into carry
-                    CF = (oper >= 0x80);
+                    CF = (_currentOper >= 0x80);
 
-                    // shift operand
-                    result = oper << 1;
+                    // shift _currentOperand
+                    result = _currentOper << 1;
 
                     NF = ((result & 0x80) == 0x80);
                     ZF = ((result & 0xff) == 0x00);
@@ -261,7 +386,7 @@ namespace Untari.CPU
                     byte offset = _bus.GetByte(PC + 2);
                     PC += _currentOP.Bytes;
 
-                    if ((oper & check_value) == 0x00)
+                    if ((_currentOper & check_value) == 0x00)
                         PC += offset;
 
                     break;
@@ -291,7 +416,7 @@ namespace Untari.CPU
                     offset = _bus.GetByte(PC + 2);
                     PC += _currentOP.Bytes;
 
-                    if ((oper & check_value) == check_value)
+                    if ((_currentOper & check_value) == check_value)
                         PC += offset;
 
                     break;
@@ -299,38 +424,38 @@ namespace Untari.CPU
                 // BCC - branch on carry clear
                 case 0x90:
                     PC += _currentOP.Bytes;
-                    CheckBranch(!CF, oper);
+                    if (!CF) PC += (ushort)_currentOper;
                     break;
 
                 // BCS - branch on carry set
                 case 0xb0:
                     PC += _currentOP.Bytes;
-                    CheckBranch(CF, oper);
+                    if(CF) PC += (ushort)_currentOper;
                     break;
 
                 // BEQ - branch on zero
                 case 0xf0:
                     PC += _currentOP.Bytes;
-                    CheckBranch(ZF, oper);
+                    if(ZF) PC += (ushort)_currentOper;
                     break;
 
                 // BIT - test bits in memory with accumulator (NZV)
-                // bits 7 and 6 of oper are transferred to bits 7 and 6 of conditional register (N and V)
-                // the zero flag is set to the result of oper AND accumulator
+                // bits 7 and 6 of _currentOper are transferred to bits 7 and 6 of conditional register (N and V)
+                // the zero flag is set to the result of _currentOper AND accumulator
                 case 0x24:
                 case 0x2c:
                 // added by 65C02
                 case 0x34:
                 case 0x3c:
                 case 0x89:
-                    result = A & oper;
+                    result = A & _currentOper;
 
                     // The WDC programming manual for 65C02 indicates NV are unaffected in immediate mode.
                     // The extended op code test program reflects this.
                     if (_currentOP.AddressMode != AddressModes.Immediate)
                     {
-                        NF = ((oper & 0x80) == 0x80);
-                        VF = ((oper & 0x40) == 0x40);
+                        NF = ((_currentOper & 0x80) == 0x80);
+                        VF = ((_currentOper & 0x40) == 0x40);
                     }
 
                     ZF = ((result & 0xff) == 0x00);
@@ -341,39 +466,36 @@ namespace Untari.CPU
                 // BMI - branch on negative
                 case 0x30:
                     PC += _currentOP.Bytes;
-                    CheckBranch(NF, oper);
+                    if(NF) PC += (ushort)_currentOper;
                     break;
 
                 // BNE - branch on non zero
                 case 0xd0:
                     PC += _currentOP.Bytes;
-                    CheckBranch(!ZF, oper);
+                    if(!ZF) PC += (ushort)_currentOper;
                     break;
 
                 // BPL - branch on non negative
                 case 0x10:
                     PC += _currentOP.Bytes;
-                    CheckBranch(!NF, oper);
+                    if(!NF) PC += (ushort)_currentOper;
                     break;
 
                 // BRA - unconditional branch to immediate address
-                // NOTE: In OpcodeList.txt the number of clock cycles is one less than the documentation.
-                // This is because CheckBranch() adds one when a branch is taken, which in this case is always.
                 case 0x80:
-                    PC += _currentOP.Bytes;
-                    CheckBranch(true, oper);
+                    PC += (ushort)(_currentOP.Bytes + _currentOper);
                     break;
 
                 // BRK - force break (I)
                 case 0x00:
 
-                    // This is a software interrupt (IRQ).  These events happen in a specific order.
+                    // This is a software interrupt (IRQ). 
 
                     // Processor adds two to the current PC
                     PC += 2;
 
                     // Call IRQ routine
-                    DoIRQ(0xfffe, true);
+                    ProcessInterrupt(0xfffe, true);
 
                     // Whether or not the decimal flag is cleared depends on the type of 6502 CPU.
                     // The CMOS 65C02 clears this flag but the NMOS 6502 does not.
@@ -384,13 +506,13 @@ namespace Untari.CPU
                 // BVC - branch on overflow clear
                 case 0x50:
                     PC += _currentOP.Bytes;
-                    CheckBranch(!VF, oper);
+                    if(!VF) PC += (ushort)_currentOper;
                     break;
 
                 // BVS - branch on overflow set
                 case 0x70:
                     PC += _currentOP.Bytes;
-                    CheckBranch(VF, oper);
+                    if(VF) PC += (ushort)_currentOper;
                     break;
 
                 // CLC - clear carry flag
@@ -429,10 +551,10 @@ namespace Untari.CPU
                 case 0xd9:
                 case 0xdd:
                     
-                    byte temp = (byte)(A - oper);
+                    byte temp = (byte)(A - _currentOper);
 
-                    CF = A >= (byte)oper;
-                    ZF = A == (byte)oper;
+                    CF = A >= (byte)_currentOper;
+                    ZF = A == (byte)_currentOper;
                     NF = ((temp & 0x80) == 0x80);
 
                     PC += _currentOP.Bytes;
@@ -442,10 +564,10 @@ namespace Untari.CPU
                 case 0xe0:
                 case 0xe4:
                 case 0xec:
-                    temp = (byte)(X - oper);
+                    temp = (byte)(X - _currentOper);
 
-                    CF = X >= (byte)oper;
-                    ZF = X == (byte)oper;
+                    CF = X >= (byte)_currentOper;
+                    ZF = X == (byte)_currentOper;
                     NF = ((temp & 0x80) == 0x80);
 
                     PC += _currentOP.Bytes;
@@ -455,10 +577,10 @@ namespace Untari.CPU
                 case 0xc0:
                 case 0xc4:
                 case 0xcc:
-                    temp = (byte)(Y - oper);
+                    temp = (byte)(Y - _currentOper);
 
-                    CF = Y >= (byte)oper;
-                    ZF = Y == (byte)oper;
+                    CF = Y >= (byte)_currentOper;
+                    ZF = Y == (byte)_currentOper;
                     NF = ((temp & 0x80) == 0x80);
 
                     PC += _currentOP.Bytes;
@@ -471,7 +593,7 @@ namespace Untari.CPU
                 case 0xde:
                 // added by 65C02
                 case 0x3a:
-                    result = oper - 1;
+                    result = _currentOper - 1;
 
                     ZF = ((result & 0xff) == 0x00);
                     NF = ((result & 0x80) == 0x80);
@@ -513,7 +635,7 @@ namespace Untari.CPU
                 case 0x55:
                 case 0x59:
                 case 0x5d:
-                    result = A ^ (byte)oper;
+                    result = A ^ (byte)_currentOper;
 
                     ZF = ((result & 0xff) == 0x00);
                     NF = ((result & 0x80) == 0x80);
@@ -530,7 +652,7 @@ namespace Untari.CPU
                 case 0xfe:
                 // added by 65C02
                 case 0x1a:
-                    result = oper + 1;
+                    result = _currentOper + 1;
 
                     ZF = ((result & 0xff) == 0x00);
                     NF = ((result & 0x80) == 0x80);
@@ -584,10 +706,6 @@ namespace Untari.CPU
                     {
                         throw new InvalidOperationException("This address mode is invalid with the JMP instruction");
                     }
-
-                    // CMOS fixes a bug in this op code which results in an extra clock cycle
-                    if (_currentOP.OpCode == 0x6c && _cpuType == e6502Type.CMOS)
-                        _extraCycles++;
                     break;
 
                 // JSR - jump to new location and save return address
@@ -608,7 +726,7 @@ namespace Untari.CPU
                 case 0xb5:
                 case 0xb9:
                 case 0xbd:
-                    A = (byte)oper;
+                    A = (byte)_currentOper;
 
                     ZF = ((A & 0xff) == 0x00);
                     NF = ((A & 0x80) == 0x80);
@@ -622,7 +740,7 @@ namespace Untari.CPU
                 case 0xae:
                 case 0xb6:
                 case 0xbe:
-                    X = (byte)oper;
+                    X = (byte)_currentOper;
 
                     ZF = ((X & 0xff) == 0x00);
                     NF = ((X & 0x80) == 0x80);
@@ -636,7 +754,7 @@ namespace Untari.CPU
                 case 0xac:
                 case 0xb4:
                 case 0xbc:
-                    Y = (byte)oper;
+                    Y = (byte)_currentOper;
 
                     ZF = ((Y & 0xff) == 0x00);
                     NF = ((Y & 0x80) == 0x80);
@@ -653,15 +771,11 @@ namespace Untari.CPU
                 case 0x56:
                 case 0x5e:
 
-                    // On 65C02 (abs,X) takes one less clock cycle (but still add back 1 if page boundary crossed)
-                    if (_currentOP.OpCode == 0x5e && _cpuType == e6502Type.CMOS)
-                        _extraCycles--;
-
                     // shift bit 0 into carry
-                    CF = ((oper & 0x01) == 0x01);
+                    CF = ((_currentOper & 0x01) == 0x01);
 
-                    // shift operand
-                    result = oper >> 1;
+                    // shift _currentOperand
+                    result = _currentOper >> 1;
 
                     ZF = ((result & 0xff) == 0x00);
                     NF = ((result & 0x80) == 0x80);
@@ -671,7 +785,7 @@ namespace Untari.CPU
                     PC += _currentOP.Bytes;
                     break;
 
-                // NOP - no operation
+                // NOP - no _currentOperation
                 case 0xea:
                     PC += _currentOP.Bytes;
                     break;
@@ -686,7 +800,7 @@ namespace Untari.CPU
                 case 0x15:
                 case 0x19:
                 case 0x1d:
-                    result = A | (byte)oper;
+                    result = A | (byte)_currentOper;
 
                     ZF = ((result & 0xff) == 0x00);
                     NF = ((result & 0x80) == 0x80);
@@ -788,7 +902,7 @@ namespace Untari.CPU
                         check_value = (byte)(check_value << 1);
                     }
                     check_value = (byte)~check_value;
-                    SaveOperand(_currentOP.AddressMode, oper & check_value);
+                    SaveOperand(_currentOP.AddressMode, _currentOper & check_value);
                     PC += _currentOP.Bytes;
                     break;
 
@@ -811,7 +925,7 @@ namespace Untari.CPU
                     {
                         check_value = (byte)(check_value << 1);
                     }
-                    SaveOperand(_currentOP.AddressMode, oper | check_value);
+                    SaveOperand(_currentOP.AddressMode, _currentOper | check_value);
                     PC += _currentOP.Bytes;
                     break;
 
@@ -823,18 +937,14 @@ namespace Untari.CPU
                 case 0x36:
                 case 0x3e:
 
-                    // On 65C02 (abs,X) takes one less clock cycle (but still add back 1 if page boundary crossed)
-                    if (_currentOP.OpCode == 0x3e && _cpuType == e6502Type.CMOS)
-                        _extraCycles--;
-
                     // perserve existing cf value
                     bool old_cf = CF;
 
                     // shift bit 7 into carry flag
-                    CF = (oper >= 0x80);
+                    CF = (_currentOper >= 0x80);
 
-                    // shift operand
-                    result = oper << 1;
+                    // shift _currentOperand
+                    result = _currentOper << 1;
 
                     // old carry flag goes to bit zero
                     if (old_cf) result = result | 0x01;
@@ -854,18 +964,14 @@ namespace Untari.CPU
                 case 0x76:
                 case 0x7e:
 
-                    // On 65C02 (abs,X) takes one less clock cycle (but still add back 1 if page boundary crossed)
-                    if (_currentOP.OpCode == 0x7e && _cpuType == e6502Type.CMOS)
-                        _extraCycles--;
-
                     // perserve existing cf value
                     old_cf = CF;
 
                     // shift bit 0 into carry flag
-                    CF = (oper & 0x01) == 0x01;
+                    CF = (_currentOper & 0x01) == 0x01;
 
-                    // shift operand
-                    result = oper >> 1;
+                    // shift _currentOperand
+                    result = _currentOper >> 1;
 
                     // old carry flag goes to bit 7
                     if (old_cf) result = result | 0x80;
@@ -913,7 +1019,7 @@ namespace Untari.CPU
 
                     if (DF)
                     {
-                        result = HexToBCD(A) - HexToBCD((byte)oper);
+                        result = HexToBCD(A) - HexToBCD((byte)_currentOper);
                         if (!CF) result--;
 
                         CF = (result >= 0);
@@ -928,14 +1034,10 @@ namespace Untari.CPU
                         // Unlike ZF and CF, the NF flag represents the MSB after conversion
                         // to BCD.
                         NF = (A > 0x7f);
-
-                        // extra clock cycle on CMOS in decimal mode
-                        if (_cpuType == e6502Type.CMOS)
-                            _extraCycles++;
                     }
                     else
                     {
-                        ADC((byte)~oper);
+                        AddWithCarry((byte)~_currentOper);
                     }
                     PC += _currentOP.Bytes;
 
@@ -1017,8 +1119,8 @@ namespace Untari.CPU
                 // Perform bitwise AND between accumulator and contents of memory
                 case 0x14:
                 case 0x1c:
-                    SaveOperand(_currentOP.AddressMode, ~A & oper);
-                    ZF = (A & oper) == 0x00;
+                    SaveOperand(_currentOP.AddressMode, ~A & _currentOper);
+                    ZF = (A & _currentOper) == 0x00;
                     PC += _currentOP.Bytes;
                     break;
 
@@ -1026,8 +1128,8 @@ namespace Untari.CPU
                 // Perform bitwise AND between accumulator and contents of memory
                 case 0x04:
                 case 0x0c:
-                    SaveOperand(_currentOP.AddressMode, A | oper);
-                    ZF = (A & oper) == 0x00;
+                    SaveOperand(_currentOP.AddressMode, A | _currentOper);
+                    ZF = (A & _currentOper) == 0x00;
                     PC += _currentOP.Bytes;
                     break;
 
@@ -1061,14 +1163,25 @@ namespace Untari.CPU
                     PC += _currentOP.Bytes;
                     break;
 
+                // STP - stop the processor
+                // Shuts down the CPU until a hardware reset occurs.
+                // For now treat this instruction as a NOP.
+                case 0xdb:
+                    PC += _currentOP.Bytes;
+                    break;
+
+                // WAI - wait for interrupt
+                // Puts 65C02 into sleep mode until a hardware interrupt occurs.
+                // For now this is treated as a NOP.
+                case 0xcb:
+                    PC += _currentOP.Bytes;
+                    break;
+
                 // The original 6502 has undocumented and erratic behavior if
-                // undocumented op codes are invoked.  The 65C02 on the other hand
-                // are guaranteed to be NOPs although they vary in number of bytes
+                // undocumented op codes are invoked.  The 65C02 is guaranteed
+                // to be NOPs although they vary in number of bytes
                 // and cycle counts.  These NOPs are listed in the OpcodeList.txt file
-                // so the proper number of clock cycles are used.
-                //
-                // Instructions STP (0xdb) and WAI (0xcb) will reach this case.
-                // For now these are treated as a NOP.
+                // so the correct number of clock cycles are used.
                 default:
                     PC += _currentOP.Bytes;
                     break;
@@ -1092,25 +1205,10 @@ namespace Untari.CPU
 
                 // Indexed absolute retrieves the byte at the specified memory location
                 case AddressModes.AbsoluteX:
-
-                    ushort imm = GetImmWord();
-                    ushort result = (ushort)(imm + X);
-
-                    if (_currentOP.CheckPageBoundary)
-                    {
-                        if ((imm & 0xff00) != (result & 0xff00)) _extraCycles++;
-                    }
-                    oper = _bus.GetByte(result);
+                    oper = _bus.GetByte(GetImmWord() + X);
                     break;
                 case AddressModes.AbsoluteY:
-                    imm = GetImmWord();
-                    result = (ushort)(imm + Y);
-
-                    if (_currentOP.CheckPageBoundary)
-                    {
-                        if ((imm & 0xff00) != (result & 0xff00)) _extraCycles++;
-                    }
-                    oper = _bus.GetByte(result); break;
+                    oper = _bus.GetByte(GetImmWord() + Y); break;
 
                 // Immediate mode uses the next byte in the instruction directly.
                 case AddressModes.Immediate:
@@ -1154,13 +1252,8 @@ namespace Untari.CPU
                         3)Load the byte at this address
                     */
 
-                    ushort addr = GetWordFromMemory(GetImmByte());
-                    oper = _bus.GetByte(addr + Y);
+                    oper = _bus.GetByte(GetWordFromMemory(GetImmByte()) + Y);
 
-                    if (_currentOP.CheckPageBoundary)
-                    {
-                        if ((oper & 0xff00) != (addr & 0xff00)) _extraCycles++;
-                    }
                     break;
 
 
@@ -1293,14 +1386,6 @@ namespace Untari.CPU
             return _bus.GetByte(PC + 1);
         }
 
-        private int SignExtend(int num)
-        {
-            if (num < 0x80)
-                return num;
-            else
-                return (0xff << 8 | num) & 0xffff;
-        }
-
         private void Push(byte data)
         {
             _bus.WriteByte(0x0100 | SP, data);
@@ -1329,7 +1414,7 @@ namespace Untari.CPU
             return (ushort)((_bus.GetByte(idx) << 8 | _bus.GetByte(idx-1)) & 0xffff);
         }
 
-        private void ADC(byte oper)
+        private void AddWithCarry(byte oper)
         {
             ushort answer = (ushort)(A + oper);
             if (CF) answer++;
@@ -1344,35 +1429,7 @@ namespace Untari.CPU
             A = (byte)answer;
         }
 
-        private int HexToBCD(byte oper)
-        {
-            // validate input is valid packed BCD 
-            if (oper > 0x99)
-                throw new InvalidOperationException("Invalid BCD number: " + oper.ToString("X2"));
-            if ((oper & 0x0f) > 0x09)
-                throw new InvalidOperationException("Invalid BCD number: " + oper.ToString("X2"));
-
-            return ((oper >> 4) * 10) + (oper & 0x0f);
-        }
-
-        private byte BCDToHex(int result)
-        {
-            if (result > 0xff)
-                throw new InvalidOperationException("Invalid BCD to hex number: " + result.ToString());
-
-            if (result <= 9)
-                return (byte)result;
-            else
-                return (byte)(((result / 10) << 4) + (result % 10));
-
-        }
-
-        private void DoIRQ(ushort vector)
-        {
-            DoIRQ(vector, false);
-        }
-
-        private void DoIRQ(ushort vector, bool isBRK)
+        private void ProcessInterrupt(ushort vector, bool isBRK)
         {
             // Push the MSB of the PC
             Push((byte)(PC >> 8));
@@ -1407,22 +1464,54 @@ namespace Untari.CPU
             // load program counter with the interrupt vector
             PC = GetWordFromMemory(vector);
         }
-        
-        private void CheckBranch(bool flag, int oper)
+
+        // Calculates extra cycles for the branch without taking it (intended for use by FetchInstruction())
+        private static int FetchBranch(bool flag, int oper, ushort pc)
         {
-            if (flag)
+            int cycles = 0;
+            if( flag )
             {
                 // extra cycle on branch taken
-                _extraCycles++;
+                cycles++;
 
                 // extra cycle if branch destination is a different page than
                 // the next instruction
-                if ((PC & 0xff00) != ((PC + oper) & 0xff00))
-                    _extraCycles++;
-
-                PC += (ushort)oper;
+                if( (pc & 0xff00) != ((pc + oper) & 0xff00) )
+                    cycles++;
             }
+            return cycles;
+        }
+
+        private static int SignExtend(int num)
+        {
+            if (num < 0x80)
+                return num;
+            else
+                return (0xff << 8 | num) & 0xffff;
+        }
+
+        private static int HexToBCD(byte oper)
+        {
+            // validate input is valid packed BCD 
+            if (oper > 0x99)
+                throw new InvalidOperationException("Invalid BCD number: " + oper.ToString("X2"));
+            if ((oper & 0x0f) > 0x09)
+                throw new InvalidOperationException("Invalid BCD number: " + oper.ToString("X2"));
+
+            return ((oper >> 4) * 10) + (oper & 0x0f);
+        }
+
+        private static byte BCDToHex(int result)
+        {
+            if (result > 0xff)
+                throw new InvalidOperationException("Invalid BCD to hex number: " + result.ToString());
+
+            if (result <= 9)
+                return (byte)result;
+            else
+                return (byte)(((result / 10) << 4) + (result % 10));
 
         }
+
     }
 }

@@ -31,10 +31,12 @@ namespace UntariTests
             {
                 instr_count++;
                 prev_pc = cpu.PC;
-                cycle_count += cpu.ExecuteNext();
+
+                cycle_count += cpu.FetchInstruction();
+                cpu.ExecuteInstruction();
 
                 // Add interrupts where expected in the test.
-                switch (prev_pc)
+                switch( prev_pc)
                 {
                     // IRQ tests
                     case 0x0434:
@@ -66,7 +68,6 @@ namespace UntariTests
             Debug.WriteLine("Time: " + sw.ElapsedMilliseconds.ToString() + " ms");
             Debug.WriteLine("Cycles: " + cycle_count.ToString("N0"));
             Debug.WriteLine("Instructions: " + instr_count.ToString("N0"));
-
             Assert.AreEqual(0x06ec, cpu.PC, "Test program failed at $" + cpu.PC.ToString("X4"));
         }
 

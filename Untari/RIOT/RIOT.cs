@@ -27,6 +27,7 @@ namespace Untari.RIOT
             {
 
             }
+            return 0;
         }
 
         public void WriteByte(int address, byte data)

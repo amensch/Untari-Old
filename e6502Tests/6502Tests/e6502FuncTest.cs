@@ -31,7 +31,8 @@ namespace UntariTests
             {
                 instr_count++;
                 prev_pc = cpu.PC;
-                cycle_count += cpu.ExecuteNext();
+                cycle_count += cpu.FetchInstruction();
+                cpu.ExecuteInstruction();
             } while (prev_pc != cpu.PC);
             sw.Stop();
 
@@ -39,7 +40,7 @@ namespace UntariTests
             Debug.WriteLine("Cycles: " + cycle_count.ToString("N0"));
             Debug.WriteLine("Instructions: " + instr_count.ToString("N0"));
 
-            double mhz = (cycle_count / sw.ElapsedMilliseconds) / 1000;
+            double mhz = ((double)cycle_count / sw.ElapsedMilliseconds) / 1000;
             Debug.WriteLine("Effective Mhz: " + mhz.ToString("N1"));
 
             Assert.AreEqual(0x3399, cpu.PC, "Test program failed at $" + cpu.PC.ToString("X4"));

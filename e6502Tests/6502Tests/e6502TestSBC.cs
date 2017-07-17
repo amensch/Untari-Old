@@ -17,9 +17,12 @@ namespace UntariTests
                                                 0xe9, 0x01 });  // SBC #$01
                                                                 // 0 - 1 = -1
                                                                 // A=ff, V=0
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0xff, cpu.A, "A failed");
             Assert.AreEqual(false, cpu.ZF, "ZF failed");
@@ -38,9 +41,12 @@ namespace UntariTests
                                                 0xe9, 0x01 });  // SBC #$01
                                                                 // -128 - 1 = -129
                                                                 // A=7f, V=1
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x7f, cpu.A, "A failed");
             Assert.AreEqual(false, cpu.ZF, "ZF failed");
@@ -58,9 +64,12 @@ namespace UntariTests
                                                 0xa9, 0x7f,     // LDA #$7F
                                                 0xe9, 0xff });  // SBC #$ff
                                                                 // 127 - -1 = 128
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x80, cpu.A, "A failed");
             Assert.AreEqual(false, cpu.ZF, "ZF failed");
@@ -77,9 +86,12 @@ namespace UntariTests
             cpu.LoadProgram(0x00, new byte[] {  0x18,           // CLC
                                                 0xa9, 0xc0,     // LDA #$C0
                                                 0xe9, 0x40 });  // SBC #$40
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x7f, cpu.A, "A failed");
             Assert.AreEqual(false, cpu.ZF, "ZF failed");
@@ -98,10 +110,14 @@ namespace UntariTests
                                                 0x38,           // SEC
                                                 0xa9, 0x46,     // LDA #$46
                                                 0xe9, 0x12 });  // SBC #$12
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x34, cpu.A, "A failed");
             Assert.AreEqual(true, cpu.CF, "CF failed");
@@ -117,10 +133,14 @@ namespace UntariTests
                                                 0x38,           // SEC
                                                 0xa9, 0x12,     // LDA #$12
                                                 0xe9, 0x21 });  // SBC #$21
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
-            cpu.ExecuteNext();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
+            cpu.FetchInstruction();
+            cpu.ExecuteInstruction();
 
             Assert.AreEqual(0x91, cpu.A, "A failed");
             Assert.AreEqual(false, cpu.CF, "CF failed");
