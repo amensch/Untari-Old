@@ -1386,14 +1386,6 @@ namespace Untari.CPU
             return _bus.GetByte(PC + 1);
         }
 
-        private int SignExtend(int num)
-        {
-            if (num < 0x80)
-                return num;
-            else
-                return (0xff << 8 | num) & 0xffff;
-        }
-
         private void Push(byte data)
         {
             _bus.WriteByte(0x0100 | SP, data);
@@ -1437,29 +1429,6 @@ namespace Untari.CPU
             A = (byte)answer;
         }
 
-        private int HexToBCD(byte oper)
-        {
-            // validate input is valid packed BCD 
-            if (oper > 0x99)
-                throw new InvalidOperationException("Invalid BCD number: " + oper.ToString("X2"));
-            if ((oper & 0x0f) > 0x09)
-                throw new InvalidOperationException("Invalid BCD number: " + oper.ToString("X2"));
-
-            return ((oper >> 4) * 10) + (oper & 0x0f);
-        }
-
-        private byte BCDToHex(int result)
-        {
-            if (result > 0xff)
-                throw new InvalidOperationException("Invalid BCD to hex number: " + result.ToString());
-
-            if (result <= 9)
-                return (byte)result;
-            else
-                return (byte)(((result / 10) << 4) + (result % 10));
-
-        }
-
         private void ProcessInterrupt(ushort vector, bool isBRK)
         {
             // Push the MSB of the PC
@@ -1497,7 +1466,7 @@ namespace Untari.CPU
         }
 
         // Calculates extra cycles for the branch without taking it (intended for use by FetchInstruction())
-        private int FetchBranch(bool flag, int oper, ushort pc)
+        private static int FetchBranch(bool flag, int oper, ushort pc)
         {
             int cycles = 0;
             if( flag )
@@ -1511,6 +1480,37 @@ namespace Untari.CPU
                     cycles++;
             }
             return cycles;
+        }
+
+        private static int SignExtend(int num)
+        {
+            if (num < 0x80)
+                return num;
+            else
+                return (0xff << 8 | num) & 0xffff;
+        }
+
+        private static int HexToBCD(byte oper)
+        {
+            // validate input is valid packed BCD 
+            if (oper > 0x99)
+                throw new InvalidOperationException("Invalid BCD number: " + oper.ToString("X2"));
+            if ((oper & 0x0f) > 0x09)
+                throw new InvalidOperationException("Invalid BCD number: " + oper.ToString("X2"));
+
+            return ((oper >> 4) * 10) + (oper & 0x0f);
+        }
+
+        private static byte BCDToHex(int result)
+        {
+            if (result > 0xff)
+                throw new InvalidOperationException("Invalid BCD to hex number: " + result.ToString());
+
+            if (result <= 9)
+                return (byte)result;
+            else
+                return (byte)(((result / 10) << 4) + (result % 10));
+
         }
 
     }
