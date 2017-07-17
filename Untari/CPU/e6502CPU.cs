@@ -43,6 +43,15 @@ namespace Untari.CPU
         // List of op codes and their attributes
         private OpCodeTable _opCodeTable;
 
+        // Hardware interrupt vector
+        private const ushort IRQ_VECTOR = 0xfffe;
+
+        // Non maskable interrupt vector
+        private const ushort NMI_VECTOR = 0xfffa;
+
+        // Power on vector
+        private const ushort POWER_ON_VECTOR = 0xfffc;
+
         // Preloaded op code record and operand
         private OpCodeRecord _currentOP;
         private int _currentOper;
@@ -53,6 +62,7 @@ namespace Untari.CPU
         // Flag for non maskable interrupt (NMI)
         public bool NMIWaiting { get; set; }
 
+        // Property to hold the CPU type (NMOS or CMOS)
         public e6502Type _cpuType { get; set; }
 
         public e6502(e6502Type type, IBus bus)
@@ -83,7 +93,7 @@ namespace Untari.CPU
             // On reset the addresses 0xfffc and 0xfffd are read and PC is loaded with this value.
             // It is expected that the initial program loaded will have these values set to something.
             // Most 6502 systems contain ROM in the upper region (around 0xe000-0xffff)
-            PC = GetWordFromMemory(0xfffc);
+            PC = GetWordFromMemory(POWER_ON_VECTOR);
 
             // interrupt disabled is set on powerup
             IF = true;
@@ -116,14 +126,13 @@ namespace Untari.CPU
             // Check for interrupts
             if( NMIWaiting )
             {
-                // this is an interrupt... use different PC value
-                current_pc = GetWordFromMemory(0xfffa);
+                current_pc = GetWordFromMemory(NMI_VECTOR);
                 cycles += 6;
 
             }
             else if(!IF && IRQWaiting)
             {
-                current_pc = GetWordFromMemory(0xfffe);
+                current_pc = GetWordFromMemory(IRQ_VECTOR);
                 cycles += 6;
             }
 
