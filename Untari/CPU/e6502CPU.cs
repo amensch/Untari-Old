@@ -37,6 +37,9 @@ namespace Untari.CPU
         public bool ZF;    // zero flag (Z)
         public bool CF;    // carry flag (C)
 
+        // Property to hold the CPU type (NMOS or CMOS)
+        private e6502Type _cpuType { get; set; }
+
         // System bus
         private IBus _bus;
 
@@ -61,9 +64,6 @@ namespace Untari.CPU
 
         // Flag for non maskable interrupt (NMI)
         public bool NMIWaiting { get; set; }
-
-        // Property to hold the CPU type (NMOS or CMOS)
-        public e6502Type _cpuType { get; set; }
 
         public e6502(e6502Type type, IBus bus)
         {
@@ -102,12 +102,14 @@ namespace Untari.CPU
             IRQWaiting = false;
         }
 
+        // Loads a program into memory (for now used only for testing)
         public void LoadProgram(ushort startingAddress, byte[] program)
         {
             _bus.LoadProgram(startingAddress, program);
             PC = startingAddress;
         }
 
+        // returns disassembled string for the next instruction
         public string DasmNextInstruction()
         {
             OpCodeRecord oprec = _opCodeTable.OpCodes[ _bus.GetByte(PC) ];
@@ -253,6 +255,7 @@ namespace Untari.CPU
             return cycles;
         }
 
+        // executes the loaded instruction (FetchInstruction must be called first)
         public void ExecuteInstruction()
         {
             int result;
