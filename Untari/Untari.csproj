@@ -53,7 +53,7 @@
     <Compile Include="CPU\OpCodes\OpCodeReader.cs" />
     <Compile Include="CPU\OpCodes\OpCodeRecord.cs" />
     <Compile Include="CPU\OpCodes\OpCodeTable.cs" />
-    <Compile Include="RAM\RAM.cs" />
+    <Compile Include="RIOT\RAM.cs" />
     <Compile Include="Console\IBus.cs" />
     <Compile Include="Console\SystemBus.cs" />
     <Compile Include="Console\SystemConsole.cs" />
