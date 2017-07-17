@@ -8,6 +8,7 @@ namespace Untari.Console
 {
     public interface IBusDevice
     {
+        bool IsChipSelected(int address);
         byte GetByte(int address);
         void WriteByte(int address, byte data);
     }
