@@ -1,5 +1,6 @@
 ﻿using System;
 using Untari.Console;
+using Untari;
 
 namespace UntariTests
 {

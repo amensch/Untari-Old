@@ -109,6 +109,129 @@ namespace Untari.CPU
                 return oprec.Dasm( GetImmByte() );
         }
 
+        // returns number of clock cycles to execute the next instruction
+        public int FetchInstruction()
+        {
+            int cycles = 0;
+            OpCodeRecord op = _opCodeTable.OpCodes[ _bus.GetByte( PC ) ];
+            ushort current_pc = PC;
+            int oper = GetOperand( op.AddressMode );
+
+            if( NMIWaiting || (!IF && IRQWaiting) )
+            {
+                cycles += 6;
+            }
+
+            cycles += op.Cycles;
+
+            // Some op codes require one extra clock cycle in CMOS mode
+            if(_cpuType == e6502Type.CMOS)
+            {
+                switch( op.OpCode )
+                {
+                    case 0x61:
+                    case 0x65:
+                    case 0x69:
+                    case 0x6d:
+                    case 0x71:
+                    case 0x72:
+                    case 0x75:
+                    case 0x79:
+                    case 0x7d:
+                    case 0xe1:
+                    case 0xe5:
+                    case 0xe9:
+                    case 0xed:
+                    case 0xf1:
+                    case 0xf2:
+                    case 0xf5:
+                    case 0xf9:
+                    case 0xfd:
+                        if( DF )
+                            cycles++;
+                        break;
+                    case 0x6c:
+                        cycles++;
+                        break;
+                    case 0x1e:
+                    case 0x5e:
+                    case 0x3e:
+                    case 0x7e:
+                        cycles--;
+                        break;
+
+                }
+            }
+
+            // Crossing a page boundary results in an extra clock cycle
+            if( op.CheckPageBoundary )
+            {
+                if( op.AddressMode == AddressModes.AbsoluteX )
+                {
+                    ushort imm = GetImmWord();
+                    ushort result = (ushort) (imm + X);
+                    if( (imm & 0xff00) != (result & 0xff00) )
+                        cycles++;
+                }
+                else if( op.AddressMode == AddressModes.AbsoluteY )
+                {
+                    ushort imm = GetImmWord();
+                    ushort result = (ushort) (imm + Y);
+                    if( (imm & 0xff00) != (result & 0xff00) )
+                        cycles++;
+                }
+                else if( op.AddressMode == AddressModes.IndirectY )
+                {
+                    ushort addr = GetWordFromMemory( GetImmByte() );
+                    byte operand = _bus.GetByte( addr + Y );
+                    if( (operand & 0xff00) != (addr & 0xff00) )
+                        cycles++;
+                }
+            }
+
+            // Extra cycle for a branch taken, and one more for crossing a page boundary
+            switch( op.OpCode )
+            {
+                case 0x90:
+                    current_pc += op.Bytes;
+                    cycles += FetchBranch( !CF, oper, current_pc );
+                    break;
+                case 0xb0:
+                    current_pc += op.Bytes;
+                    cycles += FetchBranch( CF, oper, current_pc );
+                    break;
+                case 0xf0:
+                    current_pc += op.Bytes;
+                    cycles += FetchBranch( ZF, oper, current_pc );
+                    break;
+                case 0x30:
+                    current_pc += op.Bytes;
+                    cycles += FetchBranch( NF, oper, current_pc );
+                    break;
+                case 0xd0:
+                    current_pc += op.Bytes;
+                    cycles += FetchBranch( !ZF, oper, current_pc );
+                    break;
+                case 0x10:
+                    current_pc += op.Bytes;
+                    cycles += FetchBranch( !NF, oper, current_pc );
+                    break;
+                case 0x80:
+                    current_pc += op.Bytes;
+                    cycles += FetchBranch( true, oper, current_pc );
+                    break;
+                case 0x50:
+                    current_pc += op.Bytes;
+                    cycles += FetchBranch( !VF, oper, current_pc );
+                    break;
+                case 0x70:
+                    current_pc += op.Bytes;
+                    cycles += FetchBranch( VF, oper, current_pc );
+                    break;
+            }
+            return cycles;
+        }
+
         // returns # of clock cycles needed to execute the instruction
         public int ExecuteNext()
         {
@@ -1406,6 +1529,23 @@ namespace Untari.CPU
 
             // load program counter with the interrupt vector
             PC = GetWordFromMemory(vector);
+        }
+
+        // Calculates extra cycles for the branch without taking it (intended for use by FetchInstruction())
+        private int FetchBranch(bool flag, int oper, ushort pc)
+        {
+            int cycles = 0;
+            if( flag )
+            {
+                // extra cycle on branch taken
+                cycles++;
+
+                // extra cycle if branch destination is a different page than
+                // the next instruction
+                if( (pc & 0xff00) != ((pc + oper) & 0xff00) )
+                    cycles++;
+            }
+            return cycles;
         }
         
         private void CheckBranch(bool flag, int oper)
