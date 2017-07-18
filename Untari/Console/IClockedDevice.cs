@@ -4,9 +4,10 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Untari.RAM
+namespace Untari.Console
 {
-    public class RAM
+    public interface IClockedDevice
     {
+        void Tick();
     }
 }
